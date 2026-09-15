@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flood watch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script>
+  // Fallback in case the primary CDN is blocked/unreachable
+  if (typeof Chart === 'undefined') {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
+  }
+</script>
+<style>
+  :root{
+    --bg:#FDFBF3;
+    --surface:#FFFFFF;
+    --surface-raised:#FFF8E3;
+    --border:#E6D8AE;
+    --text-primary:#2B2410;
+    --text-secondary:#9A8449;
+    --water:#C9A227;
+    --water-dim:#F3E7BE;
+    --rain:#B8860B;
+    --rain-dim:#F5E9C6;
+    --danger:#C0392B;
+    --ok:#4C7A3F;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text-primary);
+    font-family:'Inter',sans-serif;
+    line-height:1.5;
+  }
+  .wrap{max-width:960px;margin:0 auto;padding:32px 20px 64px;}
+
+  header{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-bottom:28px;
+    padding-bottom:20px;
+    border-bottom:1px solid var(--border);
+  }
+  header h1{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:600;
+    font-size:26px;
+    margin:0;
+  }
+  .status-line{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13px;
+    color:var(--text-secondary);
+  }
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--text-secondary);}
+  .dot.live{background:var(--ok);}
+  .dot.offline{background:var(--danger);}
+
+  .cards{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:16px;
+    margin-bottom:24px;
+  }
+  @media (max-width:600px){.cards{grid-template-columns:1fr;}}
+
+  .card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:20px 22px;
+    box-shadow:0 2px 8px rgba(184,134,11,0.06);
+  }
+  .card .label{
+    font-size:13px;
+    color:var(--text-secondary);
+    margin:0 0 10px;
+  }
+  .card .reading{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+  }
+  .card .reading .big{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:600;
+    font-size:40px;
+  }
+  .card .reading .unit{
+    font-size:15px;
+    color:var(--text-secondary);
+  }
+  .card .detail{
+    margin-top:8px;
+    font-size:13px;
+    color:var(--text-secondary);
+  }
+
+  .rain-card .big{color:var(--rain);}
+  .water-card .big{color:var(--water);}
+
+  .badge{
+    display:inline-block;
+    padding:3px 10px;
+    border-radius:20px;
+    font-size:12px;
+    font-weight:500;
+  }
+  .badge.yes{background:var(--rain-dim);color:var(--rain);}
+  .badge.no{background:var(--water-dim);color:var(--ok);}
+  .badge.rising{background:#F5DEDA;color:var(--danger);}
+  .badge.falling{background:var(--water-dim);color:var(--water);}
+  .badge.stable{background:#F0EAD8;color:var(--text-secondary);}
+
+  .panel{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:20px 22px;
+    margin-bottom:20px;
+    box-shadow:0 2px 8px rgba(184,134,11,0.06);
+  }
+  .panel h2{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:16px;
+    font-weight:500;
+    margin:0 0 16px;
+  }
+  .chart-holder{position:relative;height:220px;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{
+    text-align:left;
+    padding:9px 6px;
+    border-bottom:1px solid var(--border);
+    font-family:'IBM Plex Mono',monospace;
+  }
+  th{color:var(--text-secondary);font-weight:500;}
+
+  .empty{
+    color:var(--text-secondary);
+    font-size:14px;
+    padding:20px 0;
+    text-align:center;
+  }
+
+  footer{
+    color:var(--text-secondary);
+    font-size:12px;
+    text-align:center;
+    margin-top:20px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Flood watch</h1>
+    <div class="status-line"><span class="dot" id="statusDot"></span><span id="statusText">connecting…</span></div>
+  </header>
+
+  <div class="cards">
+    <div class="card rain-card">
+      <p class="label">Rain</p>
+      <div class="reading">
+        <span class="big" id="rainValue">–</span>
+      </div>
+      <div class="detail" id="rainDetail">Waiting for data</div>
+    </div>
+    <div class="card water-card">
+      <p class="label">Water level</p>
+      <div class="reading">
+        <span class="big" id="waterValue">–</span>
+        <span class="unit">%</span>
+      </div>
+      <div class="detail" id="waterDetail">Waiting for data</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Water level, last readings</h2>
+    <div class="chart-holder"><canvas id="waterChart"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <h2>Recent log</h2>
+    <div id="logHolder"><p class="empty">No readings yet</p></div>
+  </div>
+
+  <footer>Readings come from a rain sensor and water level sensor on an ESP32 dev board.</footer>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import {
+  getFirestore, collection, query, orderBy, limit, onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+// Fill in your Firebase project's web config here
+// Import the functions you need from the SDKs you need
+
+// TO Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyDkESbj9Bc1xvhrqvbCAh18rbrWYLe2egg",
+  authDomain: "ai-watch-17dac.firebaseapp.com",
+  databaseURL: "https://ai-watch-17dac-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "ai-watch-17dac",
+  storageBucket: "ai-watch-17dac.firebasestorage.app",
+  messagingSenderId: "312028036558",
+  appId: "1:312028036558:web:a2fb1f37719f3a70e27f9f"
+};
+
+// Initialize Firebase
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const HOW_MANY_READINGS = 30;
+const RISE_THRESHOLD_PERCENT = 1.5; // % change across the window counts as a real trend
+
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const rainValue = document.getElementById('rainValue');
+const rainDetail = document.getElementById('rainDetail');
+const waterValue = document.getElementById('waterValue');
+const waterDetail = document.getElementById('waterDetail');
+const logHolder = document.getElementById('logHolder');
+
+let chart;
+
+function formatTime(ts) {
+  if (!ts) return '–';
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+// Simple trend read: compare the average of the older half of the window
+// to the average of the newer half. This is rule-based analysis, not a
+// trained model, but it gives a steadier answer than looking at only the
+// last two points.
+function getTrend(readings) {
+  if (readings.length < 4) return 'stable';
+  const mid = Math.floor(readings.length / 2);
+  const older = readings.slice(0, mid);
+  const newer = readings.slice(mid);
+  const avg = arr => arr.reduce((s, r) => s + r.water_percent, 0) / arr.length;
+  const diff = avg(newer) - avg(older);
+  if (diff > RISE_THRESHOLD_PERCENT) return 'rising';
+  if (diff < -RISE_THRESHOLD_PERCENT) return 'falling';
+  return 'stable';
+}
+
+function renderChart(readingsOldestFirst) {
+  if (typeof Chart === 'undefined') {
+    throw new Error('Chart.js did not load — check network/CDN access');
+  }
+  const labels = readingsOldestFirst.map(r => formatTime(r.timestamp));
+  const data = readingsOldestFirst.map(r => r.water_percent);
+
+  if (!chart) {
+    const ctx = document.getElementById('waterChart').getContext('2d');
+    chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data,
+          borderColor: '#C9A227',
+          backgroundColor: 'rgba(201,162,39,0.14)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 0,
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#9A8449', maxTicksLimit: 6 }, grid: { color: '#E6D8AE' } },
+          y: { min: 0, max: 100, ticks: { color: '#9A8449' }, grid: { color: '#E6D8AE' } }
+        }
+      }
+    });
+  } else {
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = data;
+    chart.update();
+  }
+}
+
+function renderLog(readingsNewestFirst) {
+  if (readingsNewestFirst.length === 0) {
+    logHolder.innerHTML = '<p class="empty">No readings yet</p>';
+    return;
+  }
+  const rows = readingsNewestFirst.slice(0, 10).map(r => `
+    <tr>
+      <td>${formatTime(r.timestamp)}</td>
+      <td>${r.water_percent.toFixed(1)}%</td>
+      <td>${r.is_raining ? 'yes' : 'no'}</td>
+    </tr>
+  `).join('');
+  logHolder.innerHTML = `
+    <table>
+      <thead><tr><th>Time</th><th>Water level</th><th>Rain</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+const q = query(collection(db, 'readings'), orderBy('timestamp', 'desc'), limit(HOW_MANY_READINGS));
+
+onSnapshot(q, (snapshot) => {
+  statusDot.className = 'dot live';
+  statusText.textContent = 'live';
+
+  const readingsNewestFirst = snapshot.docs.map(doc => doc.data());
+  if (readingsNewestFirst.length === 0) return;
+
+  const latest = readingsNewestFirst[0];
+  const readingsOldestFirst = [...readingsNewestFirst].reverse();
+
+  rainValue.textContent = latest.is_raining ? 'Yes' : 'No';
+  rainDetail.innerHTML = `<span class="badge ${latest.is_raining ? 'yes' : 'no'}">${latest.is_raining ? 'raining now' : 'dry'}</span> · sensor reads ${latest.rain_analog}`;
+
+  waterValue.textContent = latest.water_percent.toFixed(1);
+  const trend = getTrend(readingsOldestFirst);
+  const trendLabel = trend === 'rising' ? 'rising' : trend === 'falling' ? 'falling' : 'holding steady';
+  waterDetail.innerHTML = `<span class="badge ${trend}">${trendLabel}</span> over last ${readingsOldestFirst.length} readings`;
+
+  renderLog(readingsNewestFirst);
+
+  try {
+    renderChart(readingsOldestFirst);
+  } catch (err) {
+    console.error('Chart render failed:', err);
+  }
+}, (error) => {
+  statusDot.className = 'dot offline';
+  statusText.textContent = 'offline';
+  console.error(error);
+});
+</script>
+</body>
+</html>
